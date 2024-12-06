@@ -23,6 +23,8 @@ Text-to-image (T2I) generation has made significant strides in recent years, yet
     <img src="assets/paradigm.png" alt="paradigm" width="1024px" />
 </p>
 
+**Overview of the pipeline.** I) Parallel inference is the main body of our method, which has branches of different simplicity to be denoised. Optionally, we can copy the original prompt as $p_0$ before the base prompt $p_1$ to get comprehensive context information. In detail, II) progressive attention substitution realizes the structural information to be propagated between different branches, keeping the layout consistent while progressively injecting new attributes. III) Instance Wise Semantic Masking extracts binary masks of specific subjects from the cross-attention map, further ensuring that the correct attributes are added in the corresponding regions.
+
 ## Setup
 This code is based on parallel inference of stable diffusion models. 
 Here we offer two versions of the code based on SD1.5 and SDXL separately, but our method can be extended to many pre-trained models as a plug-and-play module. 
