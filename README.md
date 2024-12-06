@@ -12,8 +12,9 @@
 
 ## ToDo List
 - [ ] Publish extension methods in combination with control-net.
-- [X] Publish notebooks for visualization.
-- [X] Publish the complete code.
+- [X] 2024/11/28 Publish notebooks for visualization.
+- [X] 2024/11/27 Publish the complete code.
+- [X] 2024/11/27 Create the repo. 
 
 ## Overview
 ### Abstract
