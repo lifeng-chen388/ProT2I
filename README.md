@@ -44,9 +44,16 @@ Due to the flexibility of our method, the number of attributes of each branch ca
 ### Branch setting
 To take the advantage of Instance-Wise Semantic Masking, we suggest to orgarnize attributes in two methods: **One subject, one branch**, where you can add multiple attributes belonging to a topic between two consecutive branches, or **One attribute, one branch**, where each attribute is added to the next branch for greatest accuracy. 
 
-🔥🔥 Separate examples can be find in [ProT2I SDXL notebook.ipynb](https://github.com/CONSTANT1386/Progress-Detail-Injection-for-Accurate-T2I-Generation/blob/main/ProT2I%20SDXL%20notebook.ipynb).
+🔥 Separate examples can be find in [ProT2I SDXL notebook.ipynb](https://github.com/CONSTANT1386/Progress-Detail-Injection-for-Accurate-T2I-Generation/blob/main/ProT2I%20SDXL%20notebook.ipynb).
 
 ### Gradio
+🎉 We offer two versions of gradio demo, where you can freely adjust hyperparameters, organize your generating branches, and visualize them. 
+| ![Image 1](assets/gradio1_5.jpg) | ![Image 2](assets/gradio_xl.jpg) |
+|----------------------------------|----------------------------------|
+
+| ![GIF 1](assets/sd15.gif) | ![GIF 2](assets/sdxl.gif) |
+|---------------------------|---------------------------|
+
 
 ## Extension
 ✨✨ Due to the flexibility of our method, it can be easily integrated many other plug-and-play modules, which will provide many possibilities. Here are a sequence of images demonstrating its flexibility when combining with control-net.
