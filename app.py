@@ -9,7 +9,7 @@ import difflib
 
 _HEADER_ = '''
 <div style="text-align: center; max-width: 650px; margin: 0 auto;">
-    <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; display: contents;">ProT2I for SD1.5</h1>
+    <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; display: contents;">ProT2I for SDXL</h1>
 </div>
 
 ⭐⭐⭐**Tips:**
