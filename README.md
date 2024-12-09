@@ -48,11 +48,11 @@ To take the advantage of Instance-Wise Semantic Masking, we suggest to orgarnize
 
 ### Gradio
 🎉 We offer two versions of gradio demo, where you can freely adjust hyperparameters, organize your generating branches, and visualize them. 
-| ![Image 1](assets/gradio1_5.jpg) | ![Image 2](assets/gradio_xl.jpg) |
-|----------------------------------|----------------------------------|
-
 | ![GIF 1](assets/sd15.gif) | ![GIF 2](assets/sdxl.gif) |
 |---------------------------|---------------------------|
+![Image 1](assets/gradio1_5.jpg)
+![Image 2](assets/gradio_xl.jpg)
+
 
 
 ## Extension
