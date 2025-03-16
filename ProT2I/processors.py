@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import abc
 import math
+import time
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
 from diffusers.models.attention import Attention
+import cv2
+from utils.ptp_utils import aggregate_attention
+from utils import vis_utils
 
 
 class P2PAttnProcessor:
-    def __init__(self, controller_list: List[AttentionControl], place_in_unet: str, do_cfg: bool):
+    def __init__(self, controller_list: List[AttentionControl], place_in_unet: str, do_cfg: bool, attention_store:AttentionStore=None):
         super().__init__()
         self.controller_list = controller_list
         self.place_in_unet = place_in_unet
         self.do_cfg = do_cfg
-        self.len_prompt = len(controller_list)+1
+        self.attention_store = attention_store
 
     def __call__(
         self,
@@ -23,8 +27,15 @@ class P2PAttnProcessor:
         hidden_states,
         encoder_hidden_states=None,
         attention_mask=None,
+        is_nursing:bool=False,
         temb: Optional[torch.Tensor] = None,
+        **kwargs,
     ):
+        # debug used
+        if encoder_hidden_states is not None:
+            pass
+
+
         residual = hidden_states
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
@@ -55,15 +66,18 @@ class P2PAttnProcessor:
         attention_probs = attn.get_attention_scores(query, key, attention_mask)
 
         # Added
-        for i, controller in enumerate(self.controller_list):
-            if self.do_cfg:
-                h = attention_probs.shape[0]
-                head_dim = attention_probs.shape[0] // 2 // self.len_prompt
-                controller(attention_probs[h//2+i*head_dim: h//2+(i+2)*head_dim], is_cross, self.place_in_unet)
-            else:
-                h = attention_probs.shape[0]
-                head_dim = attention_probs.shape[0] // self.len_prompt
-                controller(attention_probs[i*head_dim: (i+2)*head_dim], is_cross, self.place_in_unet)
+        if is_nursing and self.attention_store:
+            self.attention_store(attention_probs,is_cross,self.place_in_unet)
+        elif self.controller_list:
+            for i, controller in enumerate(self.controller_list):
+                if self.do_cfg:
+                    h = attention_probs.shape[0]
+                    head_dim = attention_probs.shape[0] // 2 // (len(self.controller_list)+1)
+                    controller(attention_probs[h//2+i*head_dim: h//2+(i+2)*head_dim], is_cross, self.place_in_unet)
+                else:
+                    h = attention_probs.shape[0]
+                    head_dim = attention_probs.shape[0] // (len(self.controller_list)+1)
+                    controller(attention_probs[i*head_dim: (i+2)*head_dim], is_cross, self.place_in_unet)
                 
         value = attn.to_v(encoder_hidden_states)
         value = attn.head_to_batch_dim(value)
@@ -86,33 +100,20 @@ class P2PAttnProcessor:
         return hidden_states
 
 
-
-
 def create_controller(
     prompts: List[str], cross_attention_kwargs: Dict, num_inference_steps: int,
-      tokenizer, device, attn_res, structured_cond=None) -> AttentionControl:
+      tokenizer, device, attn_res) -> AttentionControl:
       
     edit_type = cross_attention_kwargs.get("edit_type", None)
     local_blend_words = cross_attention_kwargs.get("local_blend_words", None)
-    equalizer_words = cross_attention_kwargs.get("equalizer_words", None)
-    equalizer_strengths = cross_attention_kwargs.get("equalizer_strengths", None)
     n_cross_replace = cross_attention_kwargs.get("n_cross_replace", 0.4)
     n_self_replace = cross_attention_kwargs.get("n_self_replace", 0.4)
     lb_threshold = cross_attention_kwargs.get("lb_threshold", 0.6)
-
-
-    # only replace
-    if edit_type == "replace" and local_blend_words is None:
-        return AttentionReplace(
-            prompts, num_inference_steps, n_cross_replace, n_self_replace, tokenizer=tokenizer, device=device, attn_res=attn_res
-        )
-
-    # replace + localblend
-    if edit_type == "replace" and local_blend_words is not None:
-        lb = LocalBlend(prompts, local_blend_words, tokenizer=tokenizer, device=device, attn_res=attn_res,threshold=lb_threshold)
-        return AttentionReplace(
-            prompts, num_inference_steps, n_cross_replace, n_self_replace, lb, tokenizer=tokenizer, device=device, attn_res=attn_res
-        )
+    lb_res = cross_attention_kwargs.get("lb_res",(32,32))
+    lb_prompt = cross_attention_kwargs.get("lb_prompt",None)
+    run_name = cross_attention_kwargs.get("run_name","masks")
+    save_map = cross_attention_kwargs.get("save_map",False)
+    is_nursing = cross_attention_kwargs.get("is_nursing", False)
 
     # only refine
     if edit_type == "refine" and local_blend_words is None:
@@ -122,54 +123,15 @@ def create_controller(
 
     # refine + localblend
     if edit_type == "refine" and local_blend_words is not None:
-        lb = LocalBlend(prompts, local_blend_words, tokenizer=tokenizer, device=device, attn_res=attn_res, threshold=lb_threshold)
+        if is_nursing and lb_prompt:
+            lb = LocalBlend(lb_prompt, local_blend_words, tokenizer=tokenizer, device=device, attn_res=lb_res,threshold=lb_threshold, run_name=run_name, save_map=save_map)
+        else:
+            lb = LocalBlend(prompts, local_blend_words, tokenizer=tokenizer, device=device, attn_res=lb_res, threshold=lb_threshold, run_name=run_name, save_map=save_map)
         return AttentionRefine(
             prompts, num_inference_steps, n_cross_replace, n_self_replace, lb, tokenizer=tokenizer, device=device, attn_res=attn_res
         )
 
-    # only reweight
-    if edit_type == "reweight" and local_blend_words is None:
-        assert (
-            equalizer_words is not None and equalizer_strengths is not None
-        ), "To use reweight edit, please specify equalizer_words and equalizer_strengths."
-        assert len(equalizer_words) == len(
-            equalizer_strengths
-        ), "equalizer_words and equalizer_strengths must be of same length."
-        equalizer = get_equalizer(prompts[1], equalizer_words, equalizer_strengths, tokenizer=tokenizer)
-        return AttentionReweight(
-            prompts,
-            num_inference_steps,
-            n_cross_replace,
-            n_self_replace,
-            tokenizer=tokenizer,
-            device=device,
-            equalizer=equalizer,
-            attn_res=attn_res,
-        )
-
-    # reweight and localblend
-    if edit_type == "reweight" and local_blend_words:
-        assert (
-            equalizer_words is not None and equalizer_strengths is not None
-        ), "To use reweight edit, please specify equalizer_words and equalizer_strengths."
-        assert len(equalizer_words) == len(
-            equalizer_strengths
-        ), "equalizer_words and equalizer_strengths must be of same length."
-        equalizer = get_equalizer(prompts[1], equalizer_words, equalizer_strengths, tokenizer=tokenizer)
-        lb = LocalBlend(prompts, local_blend_words, tokenizer=tokenizer, device=device, attn_res=attn_res,threshold=lb_threshold)
-        return AttentionReweight(
-            prompts,
-            num_inference_steps,
-            n_cross_replace,
-            n_self_replace,
-            tokenizer=tokenizer,
-            device=device,
-            equalizer=equalizer,
-            attn_res=attn_res,
-            local_blend=lb,
-        )
-
-    return EmptyControl(attn_res=attn_res, structured_cond=structured_cond)
+    return EmptyControl(attn_res=attn_res)
 
 
 class AttentionControl(abc.ABC):
@@ -218,7 +180,8 @@ class AttentionStore(AttentionControl):
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
         if attn.shape[1] <= self.attn_res[0]**2:  # avoid memory overhead
-            self.step_store[key].append(attn)
+            if is_cross:                       # only save the cross-attention maps, avoiding memory overhead
+                self.step_store[key].append(attn)
         return attn
 
     def between_steps(self):
@@ -245,69 +208,95 @@ class AttentionStore(AttentionControl):
         super(AttentionStore, self).__init__(attn_res)
         self.step_store = self.get_empty_store()
         self.attention_store = {}
+        
 
 class EmptyControl(AttentionStore):
-    def __init__(self, attn_res=None, structured_cond=None):
+    def __init__(self, attn_res=None):
         super(EmptyControl, self).__init__(attn_res=attn_res)
-        self.structured_cond = structured_cond
 
 
 def test_mask(mask):
     contains_false = not torch.all(mask.bool())
     print(f"Contains false: {contains_false}")
 
+
 class LocalBlend:
-    def __call__(self, x_t, attention_store):
-        # print(self.words)
-        # note that this code works on the latent level!
-        k = 1
-        # maps = attention_store["down_cross"][2:4] + attention_store["up_cross"][:3]  # These are the numbers because we want to take layers that are 256 x 256, I think this can be changed to something smarter...like, get all attentions where thesecond dim is self.attn_res[0] * self.attn_res[1] in up and down cross.
-        maps = [m for m in attention_store["down_cross"] + attention_store["mid_cross"] +  attention_store["up_cross"] if m.shape[1] == self.attn_res[0] * self.attn_res[1]]
-        maps = [item.reshape(self.alpha_layers.shape[0], -1, 1, self.attn_res[0], self.attn_res[1], self.max_num_words) for item in maps]
-        maps = torch.cat(maps, dim=1)
-        maps = (maps * self.alpha_layers).sum(-1).mean(1) # since alpha_layers is all 0s except where we edit, the product zeroes out all but what we change. Then, the sum adds the values of the original and what we edit. Then, we average across dim=1, which is the number of layers.
-        mask = F.max_pool2d(maps, (k * 2 + 1, k * 2 + 1), (1, 1), padding=(k, k)).float()
-        mask = F.interpolate(mask, size=(x_t.shape[2:]))
-        min_val = mask.min(dim=2, keepdims=True)[0].min(dim=3, keepdims=True)[0]
-        max_val = mask.max(dim=2, keepdims=True)[0].max(dim=3, keepdims=True)[0]
-        mask = (mask - min_val) / (max_val - min_val + 1e-6)
-        # mask = mask / mask.max(2, keepdims=True)[0].max(3, keepdims=True)[0]
-        #print the mean of the mask
-        mean_mask = mask.mean()
-        # print(f"Mean mask: {mean_mask}")    
-        mask = mask.gt(self.threshold)
-        # print the true rate
-        true_rate = mask.sum() / (mask.shape[0] * mask.shape[1] * mask.shape[2] * mask.shape[3])
-        # print(f"True rate: {true_rate}")
-        # test_mask(mask)
-        mask = mask[:1] + mask[1:]
-        mask = mask.to(torch.float16)
-
-        x_t = x_t[:1] + mask * (x_t - x_t[:1]) # x_t[:1] is the original image. mask*(x_t - x_t[:1]) zeroes out the original image and removes the difference between the original and each image we are generating (mostly just one). Then, it applies the mask on the image. That is, it's only keeping the cells we want to generate.
-        return x_t
-
     def __init__(
-        self, prompts: List[str], words: [List[List[str]]], tokenizer, device, threshold=0.6, attn_res=None
+        self, prompts: List[str], words: str, device, tokenizer, threshold=0.6, attn_res=(32, 32), run_name="masks", save_map:bool=False,
     ):
+
         self.max_num_words = 77
         self.attn_res = attn_res
         self.words = words
-
-        alpha_layers = torch.zeros(len(prompts), 1, 1, 1, 1, self.max_num_words)
-        for i, (prompt, words_) in enumerate(zip(prompts, words)):
-            if isinstance(words_, str):
-                words_ = [words_]
-            for word in words_:
-                ind = get_word_inds(prompt, word, tokenizer)
-                alpha_layers[i, :, :, :, :, ind] = 1
-        self.alpha_layers = alpha_layers.to(device) # a one-hot vector where the 1s are the words we modify (source and target)
         self.threshold = threshold
+        self.run_name = run_name
+        self.save_map = save_map
 
+        prompt_ids = tokenizer.encode(prompts[0], add_special_tokens=False)
+        w_token_ids = tokenizer.encode(words, add_special_tokens=False)
+        self.token_indices = []
+        i = 0
+        while i < len(prompt_ids):
+            if prompt_ids[i : i + len(w_token_ids)] == w_token_ids:
+                self.token_indices.extend(range(i, i + len(w_token_ids)))
+                i += len(w_token_ids)
+                break
+            else:
+                i += 1
+
+        if not self.token_indices:
+            print(f"Warning: cannot find sub-token(s) for '{words}' in the prompt.")
+
+    def __call__(self, x_t, attention_store: AttentionStore, cur_step: int, bs:int):
+        print(f"Processing words: {self.words}")
+        from_where = ("up", "mid","down")
+        select = 0
+
+        attention_maps = aggregate_attention(
+            attention_store, 
+            self.attn_res, 
+            from_where, 
+            True, 
+            select, 
+            bs,
+        ).detach().cpu()
+
+        if len(self.token_indices) > 0:
+            cross_map = attention_maps[:, :, [x+1 for x in self.token_indices]].mean(dim=-1)  # +1 is <sot> token, shape = (H, W)
+        else:
+            cross_map = torch.zeros_like(attention_maps[:, :, 0])  # shape = (H, W)
+
+        cross_map = cross_map.reshape(1, 1, *cross_map.shape)  # (1,1,H,W)
+        cross_map = cross_map.cuda()
+
+        mask = F.interpolate(cross_map, size=(x_t.shape[2], x_t.shape[3]), mode='bilinear')  # (1,1,h,w)
+        mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8) 
+        mean_mask = mask.mean()
+        mask = mask.gt(mean_mask * self.threshold).float()
+
+        if self.save_map:
+            vis_utils.save_binary_masks(
+                attention_masks=mask.squeeze().cpu(),
+                word=self.words,
+                res=self.attn_res[0],
+                save_path=f"./{self.run_name}/intermediate/mask_{cur_step}-{self.words}.jpg",
+                txt_under_img=True,
+            )
+
+        true_rate = mask.sum() / (mask.numel())
+        print(f"True rate: {true_rate}")
+
+        x_t = x_t[:1] + mask * (x_t - x_t[:1])
+        return x_t
 
 class AttentionControlEdit(AttentionStore, abc.ABC):
-    def step_callback(self, x_t):
-        if self.local_blend is not None:
-            x_t = self.local_blend(x_t, self.attention_store)       # after a step, apply local blend
+    def step_callback(self, x_t, attention_store:AttentionStore=None,):
+        if self.local_blend is not None and attention_store is not None:
+            if self.num_self_replace[0] <= self.cur_step < self.num_self_replace[1]:
+                x_t = self.local_blend(x_t, attention_store,self.cur_step, bs=2)         # after a step, apply local blend
+        elif self.local_blend is not None:
+            if self.num_self_replace[0] <= self.cur_step < self.num_self_replace[1]:
+                x_t = self.local_blend(x_t, self,self.cur_step, bs=2)      
         return x_t
 
     def replace_self_attention(self, attn_base, attn_replace):
@@ -328,10 +317,10 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
             attn = attn.reshape(self.batch_size, h, *attn.shape[1:])
             attn_base, attn_replace = attn[0], attn[1:]
             if is_cross:
-                alpha_words = self.cross_replace_alpha[self.cur_step]       # (len(des_prompts),1,1,77)
+                alpha_words = self.cross_replace_alpha[self.cur_step]       # (len(des_prompts),1,1,77), means the whether each word is replaced at cur step
                 attn_replace_new = (
                     self.replace_cross_attention(attn_base, attn_replace) * alpha_words
-                    + (1 - alpha_words) * attn_replace
+                    + (1 - alpha_words) * attn_replace      # alpha_words replace happens in specific words and steps, others keep the original dest attention
                 )
                 attn[1:] = attn_replace_new
             else:
@@ -349,7 +338,6 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
         tokenizer,
         device,
         attn_res=None,
-        structured_cond=None,
     ):
         super(AttentionControlEdit, self).__init__(attn_res=attn_res)
         # add tokenizer and device here
@@ -365,32 +353,11 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
             self_replace_steps = 0, self_replace_steps
         self.num_self_replace = int(num_steps * self_replace_steps[0]), int(num_steps * self_replace_steps[1])
         self.local_blend = local_blend
-        self.structured_cond = structured_cond
 
-
-class AttentionReplace(AttentionControlEdit):
-    def replace_cross_attention(self, attn_base, att_replace):
-        return torch.einsum("hpw,bwn->bhpn", attn_base, self.mapper)
-
-    def __init__(
-        self,
-        prompts,
-        num_steps: int,
-        cross_replace_steps: float,
-        self_replace_steps: float,
-        local_blend: Optional[LocalBlend] = None,
-        tokenizer=None,
-        device=None,
-        attn_res=None,
-    ):
-        super(AttentionReplace, self).__init__(
-            prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend, tokenizer, device, attn_res
-        )
-        self.mapper = get_replacement_mapper(prompts, self.tokenizer).to(self.device)
 
 
 class AttentionRefine(AttentionControlEdit):
-    def replace_cross_attention(self, attn_base, att_replace):
+    def replace_cross_attention(self, attn_base, att_replace):                              # not used most time
         attn_base_replace = attn_base[:, :, self.mapper].permute(2, 0, 1, 3)               
         attn_replace = attn_base_replace * self.alphas + att_replace * (1 - self.alphas)
         return attn_replace
@@ -413,32 +380,6 @@ class AttentionRefine(AttentionControlEdit):
         self.mapper, alphas = self.mapper.to(self.device), alphas.to(self.device)
         self.alphas = alphas.reshape(alphas.shape[0], 1, 1, alphas.shape[1])
 
-
-class AttentionReweight(AttentionControlEdit):
-    def replace_cross_attention(self, attn_base, att_replace):
-        if self.prev_controller is not None:
-            attn_base = self.prev_controller.replace_cross_attention(attn_base, att_replace)
-        attn_replace = attn_base[None, :, :, :] * self.equalizer[:, None, None, :]
-        return attn_replace
-
-    def __init__(
-        self,
-        prompts,
-        num_steps: int,
-        cross_replace_steps: float,
-        self_replace_steps: float,
-        equalizer,
-        local_blend: Optional[LocalBlend] = None,
-        controller: Optional[AttentionControlEdit] = None,
-        tokenizer=None,
-        device=None,
-        attn_res=None,
-    ):
-        super(AttentionReweight, self).__init__(
-            prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend, tokenizer, device, attn_res
-        )
-        self.equalizer = equalizer.to(self.device)
-        self.prev_controller = controller
 
 
 ### util functions for all Edits
@@ -466,9 +407,9 @@ def get_time_words_attention_alpha(
     alpha_time_words = torch.zeros(num_steps + 1, len(prompts) - 1, max_num_words)
     for i in range(len(prompts) - 1):
         alpha_time_words = update_alpha_time_word(alpha_time_words, cross_replace_steps["default_"], i)
-    for key, item in cross_replace_steps.items():
+    for key, item in cross_replace_steps.items():           # different replace steps for different words
         if key != "default_":
-            inds = [get_word_inds(prompts[i], key, tokenizer) for i in range(1, len(prompts))]
+            inds = [get_word_inds(prompts[i], key, tokenizer) for i in range(1, len(prompts))]  # get the indices of the words in setting bound
             for i, ind in enumerate(inds):
                 if len(ind) > 0:
                     alpha_time_words = update_alpha_time_word(alpha_time_words, item, i, ind)
@@ -492,74 +433,10 @@ def get_word_inds(text: str, word_place: int, tokenizer):
             cur_len += len(words_encode[i])
             if ptr in word_place:
                 out.append(i + 1)
-            if cur_len >= len(split_text[ptr]):
+            if cur_len >= len(split_text[ptr]):         # if  the word is not split into multiple tokens
                 ptr += 1
                 cur_len = 0
     return np.array(out)
-
-
-### util functions for ReplacementEdit
-def get_replacement_mapper_(x: str, y: str, tokenizer, max_len=77):
-    words_x = x.split(" ")
-    words_y = y.split(" ")
-    if len(words_x) != len(words_y):
-        raise ValueError(
-            f"attention replacement edit can only be applied on prompts with the same length"
-            f" but prompt A has {len(words_x)} words and prompt B has {len(words_y)} words."
-        )
-    inds_replace = [i for i in range(len(words_y)) if words_y[i] != words_x[i]]
-    inds_source = [get_word_inds(x, i, tokenizer) for i in inds_replace]
-    inds_target = [get_word_inds(y, i, tokenizer) for i in inds_replace]
-    mapper = np.zeros((max_len, max_len))
-    i = j = 0
-    cur_inds = 0
-    while i < max_len and j < max_len:
-        if cur_inds < len(inds_source) and inds_source[cur_inds][0] == i:
-            inds_source_, inds_target_ = inds_source[cur_inds], inds_target[cur_inds]
-            if len(inds_source_) == len(inds_target_):
-                mapper[inds_source_, inds_target_] = 1
-            else:
-                ratio = 1 / len(inds_target_)
-                for i_t in inds_target_:
-                    mapper[inds_source_, i_t] = ratio
-            cur_inds += 1
-            i += len(inds_source_)
-            j += len(inds_target_)
-        elif cur_inds < len(inds_source):
-            mapper[i, j] = 1
-            i += 1
-            j += 1
-        else:
-            mapper[j, j] = 1
-            i += 1
-            j += 1
-
-    # return torch.from_numpy(mapper).float()
-    return torch.from_numpy(mapper).to(torch.float16)
-
-
-def get_replacement_mapper(prompts, tokenizer, max_len=77):
-    x_seq = prompts[0]
-    mappers = []
-    for i in range(1, len(prompts)):
-        mapper = get_replacement_mapper_(x_seq, prompts[i], tokenizer, max_len)
-        mappers.append(mapper)
-    return torch.stack(mappers)
-
-
-### util functions for ReweightEdit
-def get_equalizer(
-    text: str, word_select: Union[int, Tuple[int, ...]], values: Union[List[float], Tuple[float, ...]], tokenizer
-):
-    if isinstance(word_select, (int, str)):
-        word_select = (word_select,)
-    equalizer = torch.ones(len(values), 77)
-    values = torch.tensor(values, dtype=torch.float32)
-    for i, word in enumerate(word_select):
-        inds = get_word_inds(text, word, tokenizer)
-        equalizer[:, inds] = torch.FloatTensor(values[i])
-    return equalizer
-
 
 ### util functions for RefinementEdit
 class ScoreParams:
@@ -658,5 +535,9 @@ def get_refinement_mapper(prompts, tokenizer, max_len=77):
         mappers.append(mapper)
         alphas.append(alpha)
     return torch.stack(mappers), torch.stack(alphas)
+
+
+
+
 
 

@@ -1,21 +1,29 @@
+import ast
 from typing import Any, Callable, List
 from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
 from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipeline
 from diffusers import AutoPipelineForText2Image, StableDiffusionPipeline
+from torchvision import transforms as T
 from ProT2I.processors import *
-import stanza
-from nltk.tree import Tree
+from utils.gaussian_smoothing import GaussianSmoothing
 import numpy as np
-import openai
 
 
 
-attn_res = (32, 32)                                                     # we recommend 32 both for sd1.5 512x512 and sdxl 1024x1024
-lb_threshold = 0.55                                                      # the threshold for recognizing the attention map as mask 
-n_cross_replace = 0.0                                                   # the percentage of steps to replace the cross attention map
-n_self_replace = 0.8                                                    # the percentage of steps to replace the self attention map
-openai.api_key = ""                                                     # you api_key
+def get_centroid(attn_map: torch.Tensor) -> torch.Tensor:
+    """
+    attn_map: h*w*token_len
+    """
+    h, w, seq_len = attn_map.shape
 
+    attn_x, attn_y = attn_map.sum(0), attn_map.sum(1)  # w|h seq_len
+    x = torch.linspace(0, 1, w).to(attn_map.device).reshape(w, 1)
+    y = torch.linspace(0, 1, h).to(attn_map.device).reshape(h, 1)
+
+    centroid_x = (x * attn_x).sum(0) / attn_x.sum(0)  # seq_len
+    centroid_y = (y * attn_y).sum(0) / attn_y.sum(0)  # bs seq_len
+    centroid = torch.stack((centroid_x, centroid_y), -1)  # (seq_len, 2)
+    return centroid
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.rescale_noise_cfg
 def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
@@ -38,78 +46,6 @@ def preprocess_prompts(prompts):
         return prompts.lower().strip().strip(".").strip()
     else:
         raise NotImplementedError
-
-def _get_nps_and_spans(prompt: str) -> Tuple[List[str], List[Tuple[int, int]]]:
-    print("linking to gpt...")
-    system_message = (
-        "You are an expert in progressive detail injection for image generation. "
-        "Your task is to analyze a complex prompt and decompose it into a tuple with two elements:\n\n"
-        "1. A list of sub-prompts (`sub_prompt_list`) that gradually add details. "
-        "The first and last items in the list should be the full prompt. "
-        "The second sub-prompt should retain only the basic scene and main subjects, without specific attributes. "
-        "Each subsequent sub-prompt should add only one attribute to the existing subjects, without introducing new subjects.\n\n"
-        "2. A list of tuples (`local_blend_words_list`) representing the changing attributes between successive sub-prompts. "
-        "The length of `local_blend_words_list` must equal the length of `sub_prompt_list` minus one. "
-        "Each tuple should contain the same attribute (like 'sweater' or 'ball') that appears in both corresponding sub-prompts, "
-        "to mark the specific attribute change. "
-        "The first element of this list should be None.\n\n"
-        "Example:\n"
-        "For the input 'In the quiet library, a man with glasses is studying a science book, and next to him, a lady in a blue sweater is writing her novel',\n"
-        "the output should be:\n"
-        "(\n"
-        "  [\"In the quiet library, a man with glasses is studying a science book, and next to him, a lady in a blue sweater is writing her novel\",\n"
-        "   \"In the quiet library, a man, a lady\",\n"
-        "   \"In the quiet library, a man with glasses, a lady\",\n"
-        "   \"In the quiet library, a man with glasses, a lady in sweater\",\n"
-        "   \"In the quiet library, a man with glasses, a lady in a blue sweater\",\n"
-        "   \"In the quiet library, a man with glasses is studying a science book, a lady in a blue sweater\",\n"
-        "   \"In the quiet library, a man with glasses is studying a science book, a lady in a blue sweater is writing her novel\"],\n"
-        "  [None, (\"man\", \"man\"), (\"lady\", \"lady\"), (\"sweater\", \"sweater\"), (\"man\", \"man\"), (\"lady\", \"lady\")]\n"
-        ")\n\n"
-        "In this example, each tuple in `local_blend_words_list` shows the attribute that differs between successive sub-prompts, and each attribute appears in both corresponding sub-prompts. "
-        "Ensure that `sub_prompt_list` and `local_blend_words_list` match the described format exactly."
-        "The output do not need any analysis."
-    )
-
-    user_message = f"Analyze the following prompt: '{prompt}'"
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_message}
-        ]
-    )
-    
-    result = response['choices'][0]['message']['content']
-
-    try:
-        parsed_result = ast.literal_eval(result.strip())
-        
-        if isinstance(parsed_result, tuple) and len(parsed_result) == 2:
-            sub_prompt_list, local_blend_words_list = parsed_result
-            
-            if (isinstance(sub_prompt_list, list) and all(isinstance(p, str) for p in sub_prompt_list) and
-                isinstance(local_blend_words_list, list) and
-                (local_blend_words_list[0] is None) and
-                all(isinstance(pair, tuple) and len(pair) == 2 and all(isinstance(word, str) for word in pair)
-                    for pair in local_blend_words_list[1:])):
-                if len(local_blend_words_list)+1 == len(sub_prompt_list):
-                    print("Sub-prompt list:", sub_prompt_list)
-                    print("Local blend words list:", local_blend_words_list)
-                    return parsed_result
-                else:
-                    raise ValueError(f"len(local_blend_words) must equal the len(sub_prompts_list) - 1, but get {len(local_blend_words_list)} and {len(sub_prompt_list)}")            
-            else:
-                raise ValueError("Unexpected format in parsed result content.")
-        else:
-            raise ValueError("Unexpected format in parsed result content.")
-    
-    except (SyntaxError, ValueError) as e:
-        print("Error parsing the result:", e)
-        # print("Original result from API:", result)
-        return None
-            
 
 
 class ProT2IPipeline(StableDiffusionXLPipeline):
@@ -139,6 +75,193 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
     """
 
     _optional_components = ["safety_checker", "feature_extractor"]
+
+    def _entropy_loss(
+        self,
+        prompt,
+        attention_store: AttentionStore,
+        subject_words: List[str],
+        attention_res: Tuple[int] = (32, 32),
+        Use_AdaPose: bool = False,
+        angle_loss_weight: float = 1.0,
+    ):
+        """
+        Aggregates the attention for each token and computes the max activation value for each token to alter.
+        If Use_AdaPose=True, then constrain the coordinates of the selected subattention maps.
+        Instead of the manually specified points, we use “find the coordinates of the brightest area of each patch”.
+        """
+        # ============  1. Attention map aggregation ============
+        attention_maps = aggregate_attention(
+            attention_store=attention_store,
+            res=attention_res,
+            from_where=("up", "down", "mid"),
+            is_cross=True,
+            select=0,
+        )  # [h, w, 77]
+
+        loss = 0
+
+        tokens = self.tokenizer.encode(prompt, add_special_tokens=False)
+        attention_for_texts = attention_maps[:,:,1:len(tokens)+1]
+        text_cross_map = F.softmax(attention_for_texts / 0.5, dim=-1)
+        
+        subject_word_indices_list = []
+        for w in subject_words:
+            if w:
+                w_token_ids = self.tokenizer.encode(w, add_special_tokens=False)
+                i = 0
+                matched_indices = []
+                while i < len(tokens):
+                    if tokens[i : i + len(w_token_ids)] == w_token_ids:
+                        matched_indices.extend(range(i, i + len(w_token_ids)))
+                        i += len(w_token_ids)
+                        break
+                    else:
+                        i += 1
+                subject_word_indices_list.append(matched_indices)
+
+        word_attn_maps = []
+        for idx_list in subject_word_indices_list:
+            if len(idx_list) == 0:
+
+                word_attn_maps.append(torch.zeros_like(text_cross_map[:, :, 0]))
+            else:
+                sub_map = text_cross_map[:, :, idx_list]          # [h, w, n_subtokens]
+                word_map = sub_map.mean(dim=-1)                   # [h, w]
+                word_attn_maps.append(word_map)
+
+        cross_map = torch.stack(word_attn_maps, dim=-1)
+        # --------------------------------------------------------------------
+
+        cross_map = (cross_map - cross_map.amin(dim=(0, 1), keepdim=True)) / (
+            cross_map.amax(dim=(0, 1), keepdim=True) - cross_map.amin(dim=(0, 1), keepdim=True)
+        )
+        cross_map = cross_map / cross_map.sum(dim=(0, 1), keepdim=True)
+
+        # Entropy loss
+        loss = loss - 2 * (cross_map * torch.log(cross_map + 1e-5)).sum()
+
+        # ============ 2. Adapos loss, coordinate constraints on the attention graph of the specified Token ============
+        # if Use_AdaPose:
+        #     vis_map = cross_map.permute(2, 0, 1) 
+
+        #     n_positions = vis_map.shape[0]
+
+        #     brightest_patches = []
+        #     max_vals = []
+
+        #     for i in range(n_positions):
+        #         sub_map = vis_map[i]
+        #         # Gaussian Smoothing
+        #         sub_map_smoothed = cv2.GaussianBlur(sub_map.detach().cpu().float().numpy(), (5, 5), 0)
+        #         sub_map_smoothed = torch.tensor(sub_map_smoothed, device=sub_map.device)
+
+        #         # Find the brightest area (max value and max position).
+        #         max_val, idx = sub_map_smoothed.view(-1).max(dim=0)
+        #         y, x = divmod(idx.item(), sub_map.shape[1])
+        #         pos = torch.tensor([x, y], device=sub_map.device, dtype=torch.float32)
+        #         brightest_patches.append(pos)
+        #         max_vals.append(max_val)
+
+        #     # ============ 3. Calculate the center of mass ============
+        #     curr_map = torch.stack([vis_map[i] for i in range(n_positions)])  # [K, h, w]
+        #     curr_map = curr_map.permute(1, 2, 0)  # [h, w, K]
+        #     pair_pos = (get_centroid(curr_map) * attention_res[0]).to(vis_map.device)
+
+        #     for i, pos in enumerate(brightest_patches):
+        #         loss += (0.1 * (pair_pos[i] - pos) ** 2).mean()
+
+            # ============  4 Add angular similarity constraints to prevent overlap (worked not remarkbly)============ 
+            # for i in range(n_positions):
+            #     for j in range(i + 1, n_positions):
+            #         vec_i = brightest_patches[i] / (torch.norm(brightest_patches[i])+1e-8)
+            #         vec_j = brightest_patches[j] / (torch.norm(brightest_patches[j])+1e-8)
+                    
+            #         cos_sim = torch.dot(vec_i, vec_j) 
+                    
+            #         angle_penalty = torch.clamp(cos_sim, min=0)  
+            #         loss += angle_loss_weight * (1 - angle_penalty)
+
+        return loss
+    
+
+    @staticmethod
+    def _update_latent(
+        latents: torch.Tensor, loss: torch.Tensor, step_size: float
+    ) -> torch.Tensor:
+        """Update the latent according to the computed loss."""
+        grad_cond = torch.autograd.grad(
+            loss.requires_grad_(True), [latents], retain_graph=False, allow_unused=True
+        )[0]
+        if grad_cond is None:
+            grad_cond = torch.zeros_like(latents)
+        latents = latents - step_size * grad_cond
+        del grad_cond
+        return latents
+
+
+    def _perform_iterative_refinement_step(
+        self,
+        prompt,
+        latents: torch.Tensor,
+        subject_words: List[str],
+        threshold: float,
+        text_embeddings: torch.Tensor,
+        attention_store: AttentionStore,
+        step_size: float,
+        t: int,
+        attention_res: Tuple[int] = (32,32),
+        max_refinement_steps: List[int] = [3, 3],
+        Use_AdaPose: bool = False,
+        angle_loss_weight: float = 1.0,
+    ):
+        """
+        Performs the iterative latent refinement introduced in the paper. Here, we continuously update the latent
+        code and text embedding according to our loss objective until the given threshold is reached for all tokens.
+        """
+        ratio = t / 1000
+        if ratio > 0.9:
+            max_refinement_steps = max_refinement_steps[0]
+        if ratio <= 0.9:
+            max_refinement_steps = max_refinement_steps[1]
+        print("=====================================================================")
+        iteration = 0
+        while True:
+            iteration += 1
+            torch.cuda.empty_cache()
+            with torch.enable_grad():
+                latents = latents.clone().detach().requires_grad_(True)
+
+                cross_attention_kwargs={"is_nursing":True}
+                noise_pred_text = self.unet(
+                    latents.unsqueeze(0),
+                    t,
+                    encoder_hidden_states=text_embeddings,
+                    added_cond_kwargs=self.added_cond_kwargs2,
+                    cross_attention_kwargs=cross_attention_kwargs,
+                ).sample
+                self.unet.zero_grad()
+                del noise_pred_text
+
+                loss = self._entropy_loss(prompt,attention_store,subject_words,attention_res,Use_AdaPose=Use_AdaPose, angle_loss_weight=angle_loss_weight)
+
+                if loss != 0: 
+                    latents = self._update_latent(latents, loss, step_size)
+                
+                print(f"Iteration {iteration}, Loss:{loss:.4f}")
+                # print cuda memory usage
+                # print(torch.cuda.memory_summary(device=self.device, abbreviated=True))
+                if loss < threshold:
+                    break
+                if iteration >= max_refinement_steps:
+                    print(
+                        f"Entropy loss optimization Exceeded max number of iterations ({max_refinement_steps}) "
+                    )
+                    break
+        # print Step iteration and loss
+        print(f"Step Interation: {iteration} | loss: {loss}")
+        print("=====================================================================")
+        return latents.detach()
 
     def check_inputs(
             self,
@@ -321,12 +444,19 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
             list of `bool`s denoting whether the corresponding generated image likely represents "not-safe-for-work"
             (nsfw) content, according to the `safety_checker`.
         """
+        nursing_threshold = cross_attention_kwargs.get("nursing_threshold",None)
+        scale_range = cross_attention_kwargs.get("scale_range",None)
+        scale_factor = cross_attention_kwargs.get("scale_factor",None)
+        attention_refinement_steps = cross_attention_kwargs.get("max_refinement_steps",None)
+        subject_words = cross_attention_kwargs.get("subject_words",None)
+        is_nursing = True if subject_words else False
+        use_adapose = cross_attention_kwargs.get("use_AdaPose",None)
+        angle_loss_weight = cross_attention_kwargs.get("angle_loss_weight",None)
+
 
         # get prompts   
-        if cross_attention_kwargs.get("nps", None):
-            prompt = cross_attention_kwargs.get("nps", None)
-        else:
-            prompt,_ = _get_nps_and_spans(prompt)
+        if cross_attention_kwargs.get("subprompts", None):
+            prompt = preprocess_prompts(cross_attention_kwargs.get("subprompts", None))
 
         # 0. Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
@@ -336,7 +466,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         target_size = target_size or (height, width)
 
         if attn_res is None:
-            attn_res = int(np.ceil(width / 32)), int(np.ceil(height / 32))*2
+            attn_res = int(np.ceil(width / 32)), int(np.ceil(height / 32))
         self.attn_res = attn_res
 
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
@@ -344,6 +474,9 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
         device = self._execution_device
+        scale_range = np.linspace(
+            scale_range[0], scale_range[1], len(self.scheduler.timesteps)
+        )
 
 
         # 1. Check inputs. Raise error if not correct
@@ -459,18 +592,40 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
 
         added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
 
+        added_cond_kwargs2 = {
+            "text_embeds": add_text_embeds[batch_size:batch_size+1],
+            "time_ids": add_time_ids[batch_size:batch_size+1],
+        }
+
+        self.added_cond_kwargs2 = added_cond_kwargs2
+
         # Add
-        if cross_attention_kwargs.get("set_controller", None):
-            self.controller_list = cross_attention_kwargs.get("set_controller", None)
-        else:
-            self.controller_list = _get_controller_list(prompt) 
-        self.register_attention_control(self.controller_list, do_classifier_free_guidance)  # add attention controller
+        self.controller_list = cross_attention_kwargs.get("set_controller", None)
+        attention_store = self.register_attention_control(self.controller_list, do_classifier_free_guidance, is_nursing=is_nursing)  # add attention controller
 
         
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
+                if i in nursing_threshold.keys() and is_nursing:
+                    nursed_latents = self._perform_iterative_refinement_step(
+                        prompt=prompt[0],
+                        latents=latents[0],
+                        subject_words=subject_words,
+                        threshold=nursing_threshold[i],
+                        text_embeddings=prompt_embeds[batch_size:batch_size+1] if do_classifier_free_guidance else prompt_embeds[0],
+                        attention_store=attention_store,
+                        step_size=scale_factor*np.sqrt(scale_range[i]),
+                        t=t,
+                        attention_res=attn_res,
+                        max_refinement_steps=attention_refinement_steps,
+                        Use_AdaPose=use_adapose,
+                        angle_loss_weight=angle_loss_weight,
+                    ).unsqueeze(0)
+                    latents = torch.cat([nursed_latents,latents[1:]], dim=0)
+
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # predict the noise residual
@@ -491,7 +646,12 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
 
                 # step callback
                 for i, controller in enumerate(self.controller_list):
-                    latents[i:i+2,:] = controller.step_callback(latents[i:i+2,:])
+                    if is_nursing:
+                        if controller.local_blend is not None:
+                            controller.local_blend.attn_res = self.attn_res 
+                        latents[i:i+2,:] = controller.step_callback(latents[i:i+2,:], self.controller_list[0])
+                    else:
+                        latents[i:i+2,:] = controller.step_callback(latents[i:i+2,:])
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
@@ -530,59 +690,34 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         if not return_dict:
             return (image,)
 
-        return (StableDiffusionXLPipelineOutput(images=image), self.controller_list)
+        return (StableDiffusionXLPipelineOutput(images=image), self.controller_list, attention_store)
 
 
-    def register_attention_control(self, controller_list, do_classifier_free_guidance):
+    def register_attention_control(self, controller_list, do_classifier_free_guidance, is_nursing=False):
         attn_procs = {}
         cross_att_count = 0
+        if is_nursing:
+            attentionStore = AttentionStore(self.attn_res)
+        else:
+            attentionStore = None
         for name in self.unet.attn_processors.keys():
             None if name.endswith("attn1.processor") else self.unet.config.cross_attention_dim
             if name.startswith("mid_block"):
-                # self.unet.config.block_out_channels[-1]
                 place_in_unet = "mid"
             elif name.startswith("up_blocks"):
-                # block_id = int(name[len("up_blocks.")])
-                # list(reversed(self.unet.config.block_out_channels))[block_id]
                 place_in_unet = "up"
             elif name.startswith("down_blocks"):
-                # block_id = int(name[len("down_blocks.")])
-                # self.unet.config.block_out_channels[block_id]
                 place_in_unet = "down"
             else:
                 continue
             cross_att_count += 1
-            attn_procs[name] = P2PAttnProcessor(controller_list=controller_list, place_in_unet=place_in_unet, do_cfg=do_classifier_free_guidance)
+            attn_procs[name] = P2PAttnProcessor(controller_list=controller_list, place_in_unet=place_in_unet, do_cfg=do_classifier_free_guidance,attention_store=attentionStore)
 
         self.unet.set_attn_processor(attn_procs)
-        for controller in controller_list:
-            controller.num_att_layers = cross_att_count
+        if controller_list:
+            for controller in controller_list:
+                controller.num_att_layers = cross_att_count
+        if is_nursing:
+            attentionStore.num_att_layers = cross_att_count
+        return attentionStore
 
-    def _get_controller_list(self, prompts, lb_words_list):
-        controller_np = [[prompts[i-1],prompts[i]] for i in range(1, len(prompts))]
-        controller_list = []
-        for i in range(len(lb_words_list)):
-            if i == 0:
-                controller_kwargs = {
-                    "edit_type": "refine",
-                    # "local_blend_words": ("man","man"),
-                    "equalizer_words": None,
-                    "equalizer_strengths": None,
-                    "n_cross_replace": {"default_": 0.5},
-                    "n_self_replace": 0.4,
-                    "lb_threshold": lb_threshold,
-                }
-            else:
-                controller_kwargs = {
-                    "edit_type": "refine",
-                    "local_blend_words": lb_words_list[i],
-                    "equalizer_words": None,
-                    "equalizer_strengths": None,
-                    "n_cross_replace": {"default_": n_cross_replace},
-                    "n_self_replace": n_self_replace,
-                    "lb_threshold": lb_threshold,
-                }
-            controller = create_controller(prompts=controller_np[i], cross_attention_kwargs=controller_kwargs, num_inference_steps=50,tokenizer=self.tokenizer, device=self.device, attn_res=attn_res, structured_cond=None)
-            controller_list.append(controller)
-        return controller_list
- 
