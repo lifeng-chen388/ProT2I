@@ -77,9 +77,9 @@ For technical details, please refer to our paper.
 
 ## 📸 Example Outputs
 
-If everything is set up correctly, `RunConfig1` and `RunConfig2` should produce the left and right images below, respectively:
+If everything is set up correctly, `ColorConfig` and `StyleConfig` class in `config.py` should produce images like the left and right below, respectively:
 
-<img src="pics\demo.png" width="1000">
+<img src="assets/results.jpg" width="1000">
 
 ## ⚠️ Notes
 - **Custom Configurations**: Please refer to the `config.py` file for customizing the runtime parameters.

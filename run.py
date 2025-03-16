@@ -5,7 +5,7 @@ import torch
 from ProT2I.prot2i_pipeline_sdxl import ProT2IPipeline
 from ProT2I.processors import create_controller
 from utils.nlp_utils import split_prompt
-from config import SDXLConfig
+from config import *
 
 def custom_repr(self):
     return f'{{Tensor:{tuple(self.shape)}}} {original_repr(self)}'
@@ -13,7 +13,7 @@ def custom_repr(self):
 if __name__ == "__main__":
     original_repr = torch.Tensor.__repr__
     torch.Tensor.__repr__ = custom_repr
-    config = SDXLConfig()
+    config = NLPConfig()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     pipe = ProT2IPipeline.from_pretrained(config.model_path, torch_dtype=torch.float16, use_safetensors=True, variant='fp16')
     pipe.enable_model_cpu_offload() 
