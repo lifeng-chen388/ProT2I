@@ -1,0 +1,12 @@
+accelerate
+diffusers
+einops
+gradio
+huggingface-hub
+nltk
+numpy
+opencv-python
+pillow
+spacy
+stanza
+transformers

@@ -5,7 +5,7 @@
   <p align="center">
     <strong>Lifeng Chen</strong><sup>1</sup>
     &nbsp;&nbsp;
-    <strong>Jiner Wang</strong><sup>2</sup>
+    <strong>Jiner Wang</strong><sup>1</sup>
     &nbsp;&nbsp;
     <a href="https://pan-zihao.github.io/"><strong>Zihao Pan</strong></a><sup>1</sup>
     &nbsp;&nbsp;
@@ -21,15 +21,16 @@
     <br>
     <br>
     <a href='https://arxiv.org/abs/2412.08503'><img src='https://img.shields.io/badge/ArXiv-2412.08503-red'></a>&nbsp;
-    <a href='https://stylestudio-official.github.io/'><img src='https://img.shields.io/badge/Project-Page-green'></a>&nbsp;
-    <a href="https://huggingface.co/spaces/Westlake-AGI-Lab/StyleStudio"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Gradio%20Demo-HF-orange"></a>
+    <a href='https://ProT2I-official.github.io/'><img src='https://img.shields.io/badge/Project-Page-green'></a>&nbsp;
+    <a href="https://huggingface.co/spaces/Westlake-AGI-Lab/ProT2I"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Gradio%20Demo-HF-orange"></a>
     <br>
     <img src="assets/teaser.jpg" width="800">
   </p>
 </p>
 
 ## 📑 Introduction
-This paper provides a new method for resolving the problem of **semantic binding** in text-to-image (T2I) generation, which use a progressive injection way to make the attributes in a correct subject region. It is worth noting that it cannot only resolve the problem of semantic overflow, but also **style blending**, which cannot be handled by existing methods. The main idea of our method is to remove all attributes firstly, then add them one by one, in a unified self-attention framework.
+This paper introduces a novel method for addressing **semantic binding** in text-to-image (T2I) generation. Our approach employs a progressive injection mechanism to accurately assign attributes within the correct subject regions. Notably, the proposed method not only mitigates semantic overflow but also overcomes the challenge of **style blending—issues** that existing techniques fail to resolve. The core idea involves initially removing all attributes and then reintroducing them sequentially within a unified self-attention framework.
+
 
 
 <img src="assets/method.jpg" width="800">
@@ -40,44 +41,39 @@ For technical details, please refer to our paper.
 
 1. **Environment Setup**
 
-   **Create and activate the Conda virtual environment:**
+   Clone the code and prepare the environment:
 
    ```bash
-   conda env create -f environment.yaml
-   conda activate tome
+   git clone https://github.com/Westlake-AGI-Lab/ProT2I
+   cd ProT2I
+   pip install -r requirements.txt
    ```
-   Alternatively, install dependencies via `pip`:
-    ```bash
-    pip install -r requirements.txt
-    ```
 
    Additionally, download the SpaCy model for syntax parsing:
 
    ```bash
-   python -m spacy download en_core_web_trf
+   python -m spacy download en_core_web_sm
    ```
 
 2. **Configure Parameters**
 
-   Modify the `configs/demo_config.py` file to adjust runtime parameters as needed. This file includes two example configuration classes: `RunConfig1` for object binding and `RunConfig2` for attribute binding. Key parameters are as follows:
+   Modify the `config.py` file to adjust runtime parameters as needed. Our framework is highly flexible, enabling adjustments to parameters such as prompt text, mask threshold, and attention map substitution percentage, which in turn yield a diverse range of interesting results. The key parameters are outlined as follows:
 
    - `prompt`: Text prompt for guiding image generation.
-   - `model_path`: Path to the Stable Diffusion model; set to `None` to download the pretrained model automatically.
-   - `use_nlp`: Whether to use an NLP model for token parsing.
-   - `token_indices`: Indices of tokens to merge.
-   - `prompt_anchor`: Split text prompt.
-   - `prompt_merged`: Text prompt after token merging.
-   - For further parameter details, please refer to the comments in the configuration file and our paper.
+   - `use_nlp`: Whether to decompose the string in `prompt` automatically using SpaCy.
+   - `sps`: A list of sub-prompts. You can design diverse sub-prompts freely like color, object accessory, and style to achieve different effects. Worked when `use_nlp` is set to `False`.
+   - `nps`: A list of noun pharses. Means the corresponding subject of current adding attributes. `None` here means the influence region will be the whole image. Worked when `use_nlp` is set to `False`. 
+   - `lb_t`: The threshold for masking out the image regions. Varing from -1 to 1, where -1 means no masking.
 
 3. **Run the Example**
 
-   Execute the main script `run_demo.py`:
+   Execute the main script `run.py`:
 
    ```bash
-   python run_demo.py
+   python run.py
    ```
 
-   The generated images will be saved in the `demo` directory.
+   The generated images will be saved in the `runs-SDXL/style-test` directory.
 
 ## 📸 Example Outputs
 

@@ -298,7 +298,7 @@ with gr.Blocks() as iface:
             -1
         ],
         [
-            "A sketch-style robot is leaning a tree\nA robot is leaning a tree\nA sketch-style robot is leaning a tree\nA robot is leaning a oil-painting style tree",
+            "A sketch-style robot is leaning a oil-painting style tree\nA robot is leaning a tree\nA sketch-style robot is leaning a tree\nA robot is leaning a oil-painting style tree",
             "\nrobot\ntree",
             0.25,
             20,
