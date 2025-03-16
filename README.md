@@ -82,17 +82,16 @@ If everything is set up correctly, `RunConfig1` and `RunConfig2` should produce 
 <img src="pics\demo.png" width="1000">
 
 ## ⚠️ Notes
-
-- **Custom Configurations**: To use custom text prompts and parameters, add a new configuration class in `configs/demo_config.py` and make necessary adjustments in `run_demo.py`.
-- **Parameter Sensitivity**: This method inherits the sensitivity of inference-based optimization techniques, meaning that the generated results are highly dependent on hyperparameter settings. Careful tuning may be required to achieve optimal results.
-- **NLP Models**: When using NLP models like SpaCy for token parsing, ensure the correct language model is installed.
+- **Custom Configurations**: Please refer to the `config.py` file for customizing the runtime parameters.
+- **Parameter Sensitivity**: This method retains the sensitivity characteristic of inference-based optimization techniques, meaning that the generated results are significantly influenced by the choice of hyperparameters. Careful tuning may be necessary to achieve optimal performance.
+- **NLP Models**: When using NLP models like SpaCy for token parsing, ensure the correct language model is installed. Here, we provide a simple adjective phrase parser that may not be accurate in all cases.
 
 ## 🙏 Acknowledgments
 
 This project builds upon valuable work and resources from the following repositories:
 
 - [Attend-and-Excite](https://github.com/yuval-alaluf/Attend-and-Excite) 
-- [Linguistic Binding in Diffusion Models](https://github.com/RoyiRa/Linguistic-Binding-in-Diffusion-Models)
+- [ToME](https://github.com/hutaiHang/ToMe/tree/main)
 - [🤗 Diffusers](https://github.com/huggingface/diffusers) 
 
 We extend our sincere thanks to the creators of these projects for their contributions to the field and for making their code available. 🙌

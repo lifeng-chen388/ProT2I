@@ -5,7 +5,7 @@ from typing import Dict, List
 
 @dataclass
 class SDXLConfig:
-    prompt: str = "A blue car and a red bowl"
+    prompt: str = "A sketch-style robot is leaning a oil-painting style tree"
 
     width: int = 1024
 
