@@ -309,7 +309,7 @@ with gr.Blocks() as iface:
             "\nrobot\ntree",
             0.25,
             20,
-            -1
+            6
         ],
 
     ]
