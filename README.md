@@ -29,7 +29,7 @@
 </p>
 
 ## 📑 Introduction
-This paper introduces a novel method for addressing **semantic binding** in text-to-image (T2I) generation. Our approach employs a progressive injection mechanism to accurately assign attributes within the correct subject regions. Notably, the proposed method not only mitigates semantic overflow but also overcomes the challenge of **style blending—issues** that existing techniques fail to resolve. The core idea involves initially removing all attributes and then reintroducing them sequentially within a unified self-attention framework.
+This paper introduces a novel method for addressing **semantic binding** in text-to-image (T2I) generation. Our approach employs a progressive injection mechanism to accurately assign attributes within the correct subject regions. Notably, the proposed method not only mitigates semantic overflow but also overcomes the challenge of **style blending** —issuesthat existing techniques fail to resolve. The core idea involves initially removing all attributes and then reintroducing them sequentially within a unified self-attention framework.
 
 
 
