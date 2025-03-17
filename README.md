@@ -75,6 +75,12 @@ For technical details, please refer to our paper.
 
    The generated images will be saved in the `runs-SDXL/style-test` directory.
 
+## 🖼️ Gradio Demo
+To run a local demo of the project, run the following:
+```bash
+pyton app.py
+```
+
 ## 📸 Example Outputs
 
 If everything is set up correctly, `ColorConfig` and `StyleConfig` class in `config.py` should produce images like the left and right below, respectively:

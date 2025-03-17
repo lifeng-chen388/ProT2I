@@ -66,10 +66,6 @@ class StyleConfig:
             3: 23,
             4: 22.5,
             5: 22,
-            6: 21.5,
-            7: 21,
-            8: 21,
-            9: 21,
         }
     )
     # maximum attention refinement steps
@@ -223,10 +219,6 @@ class NLPConfig:
             3: 23,
             4: 22.5,
             5: 22,
-            6: 21.5,
-            7: 21,
-            8: 21,
-            9: 21,
         }
     )
     # maximum attention refinement steps
