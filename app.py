@@ -59,7 +59,7 @@ def process_image(
     lb_threshold,
     attention_res,
     use_nurse,
-    use_adapose,
+    centroid_alignment,
     width,
     height,
     inference_steps,
@@ -152,7 +152,7 @@ def process_image(
             "max_refinement_steps": max_refinement_steps,
             "scale_factor": scale_factor,
             "scale_range": scale_range,
-            "use_AdaPose": use_adapose,
+            "centroid_alignment": centroid_alignment,
             "angle_loss_weight": angle_loss_weight,
         }
         
@@ -219,7 +219,7 @@ with gr.Blocks() as iface:
                     value=True
                 )
                 
-                use_adapose = gr.Checkbox(
+                centroid_alignment = gr.Checkbox(
                     label="Use centroid alignment",
                     value=True
                 )
@@ -272,7 +272,7 @@ with gr.Blocks() as iface:
             lb_threshold,
             attention_res,
             use_nurse,
-            use_adapose,
+            centroid_alignment,
             width,
             height,
             inference_steps,

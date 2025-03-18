@@ -82,12 +82,12 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         attention_store: AttentionStore,
         subject_words: List[str],
         attention_res: Tuple[int] = (32, 32),
-        Use_AdaPose: bool = False,
+        centroid_alignment: bool = False,
         angle_loss_weight: float = 1.0,
     ):
         """
         Aggregates the attention for each token and computes the max activation value for each token to alter.
-        If Use_AdaPose=True, then constrain the coordinates of the selected subattention maps.
+        If centroid_alignment=True, then constrain the coordinates of the selected subattention maps.
         Instead of the manually specified points, we use “find the coordinates of the brightest area of each patch”.
         """
         # ============  1. Attention map aggregation ============
@@ -141,35 +141,35 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         # Entropy loss
         loss = loss - 2 * (cross_map * torch.log(cross_map + 1e-5)).sum()
 
-        # ============ 2. Adapos loss, coordinate constraints on the attention graph of the specified Token ============
-        # if Use_AdaPose:
-        #     vis_map = cross_map.permute(2, 0, 1) 
+        # ============ 2. centroid alginment loss, coordinate constraints on the attention graph of the specified Token ============
+        if centroid_alignment:
+            vis_map = cross_map.permute(2, 0, 1) 
 
-        #     n_positions = vis_map.shape[0]
+            n_positions = vis_map.shape[0]
 
-        #     brightest_patches = []
-        #     max_vals = []
+            brightest_patches = []
+            max_vals = []
 
-        #     for i in range(n_positions):
-        #         sub_map = vis_map[i]
-        #         # Gaussian Smoothing
-        #         sub_map_smoothed = cv2.GaussianBlur(sub_map.detach().cpu().float().numpy(), (5, 5), 0)
-        #         sub_map_smoothed = torch.tensor(sub_map_smoothed, device=sub_map.device)
+            for i in range(n_positions):
+                sub_map = vis_map[i]
+                # Gaussian Smoothing
+                sub_map_smoothed = cv2.GaussianBlur(sub_map.detach().cpu().float().numpy(), (5, 5), 0)
+                sub_map_smoothed = torch.tensor(sub_map_smoothed, device=sub_map.device)
 
-        #         # Find the brightest area (max value and max position).
-        #         max_val, idx = sub_map_smoothed.view(-1).max(dim=0)
-        #         y, x = divmod(idx.item(), sub_map.shape[1])
-        #         pos = torch.tensor([x, y], device=sub_map.device, dtype=torch.float32)
-        #         brightest_patches.append(pos)
-        #         max_vals.append(max_val)
+                # Find the brightest area (max value and max position).
+                max_val, idx = sub_map_smoothed.view(-1).max(dim=0)
+                y, x = divmod(idx.item(), sub_map.shape[1])
+                pos = torch.tensor([x, y], device=sub_map.device, dtype=torch.float32)
+                brightest_patches.append(pos)
+                max_vals.append(max_val)
 
-        #     # ============ 3. Calculate the center of mass ============
-        #     curr_map = torch.stack([vis_map[i] for i in range(n_positions)])  # [K, h, w]
-        #     curr_map = curr_map.permute(1, 2, 0)  # [h, w, K]
-        #     pair_pos = (get_centroid(curr_map) * attention_res[0]).to(vis_map.device)
+            # ============ 3. Calculate the center of mass ============
+            curr_map = torch.stack([vis_map[i] for i in range(n_positions)])  # [K, h, w]
+            curr_map = curr_map.permute(1, 2, 0)  # [h, w, K]
+            pair_pos = (get_centroid(curr_map) * attention_res[0]).to(vis_map.device)
 
-        #     for i, pos in enumerate(brightest_patches):
-        #         loss += (0.1 * (pair_pos[i] - pos) ** 2).mean()
+            for i, pos in enumerate(brightest_patches):
+                loss += (0.1 * (pair_pos[i] - pos) ** 2).mean()
 
             # ============  4 Add angular similarity constraints to prevent overlap (worked not remarkbly)============ 
             # for i in range(n_positions):
@@ -212,7 +212,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         t: int,
         attention_res: Tuple[int] = (32,32),
         max_refinement_steps: List[int] = [3, 3],
-        Use_AdaPose: bool = False,
+        centroid_alignment: bool = False,
         angle_loss_weight: float = 1.0,
     ):
         """
@@ -243,7 +243,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
                 self.unet.zero_grad()
                 del noise_pred_text
 
-                loss = self._entropy_loss(prompt,attention_store,subject_words,attention_res,Use_AdaPose=Use_AdaPose, angle_loss_weight=angle_loss_weight)
+                loss = self._entropy_loss(prompt,attention_store,subject_words,attention_res,centroid_alignment=centroid_alignment, angle_loss_weight=angle_loss_weight)
 
                 if loss != 0: 
                     latents = self._update_latent(latents, loss, step_size)
@@ -450,7 +450,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
         attention_refinement_steps = cross_attention_kwargs.get("max_refinement_steps",None)
         subject_words = cross_attention_kwargs.get("subject_words",None)
         is_nursing = True if subject_words else False
-        use_adapose = cross_attention_kwargs.get("use_AdaPose",None)
+        centroid_alignment = cross_attention_kwargs.get("centroid_alignment",None)
         angle_loss_weight = cross_attention_kwargs.get("angle_loss_weight",None)
 
 
@@ -618,7 +618,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
                         t=t,
                         attention_res=attn_res,
                         max_refinement_steps=attention_refinement_steps,
-                        Use_AdaPose=use_adapose,
+                        centroid_alignment=centroid_alignment,
                         angle_loss_weight=angle_loss_weight,
                     ).unsqueeze(0)
                     latents = torch.cat([nursed_latents,latents[1:]], dim=0)

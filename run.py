@@ -12,7 +12,7 @@ from config import *
 if __name__ == "__main__":
     config = NLPConfig()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    pipe = ProT2IPipeline.from_pretrained(config.model_path, torch_dtype=torch.float16, use_safetensors=True, variant='fp16')
+    pipe = ProT2IPipeline.from_pretrained(config.model_path, use_safetensors=True, variant='fp16').to(torch.float16)
     pipe.enable_model_cpu_offload() 
     
     seeds = config.seeds
@@ -76,7 +76,7 @@ if __name__ == "__main__":
             "max_refinement_steps": config.max_refinement_steps,
             "scale_factor": config.scale_factor,
             "scale_range":config.scale_range,
-            "use_AdaPose":config.use_adapose,
+            "centroid_alignment":config.centroid_alignment,
             "angle_loss_weight":config.angle_loss_weight,
             }
 

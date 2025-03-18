@@ -71,7 +71,7 @@ class StyleConfig:
     # maximum attention refinement steps
     max_refinement_steps: List[int] = field(default_factory=lambda: [6,3])
 
-    use_adapose: bool = True
+    centroid_alignment: bool = True
     # angular loss weight for avoiding attention map overlap
     angle_loss_weight: float = 0.0
     # Scale factor for updating the denoised latent z_t
@@ -152,7 +152,7 @@ class ColorConfig:
     # maximum attention refinement steps
     max_refinement_steps: List[int] = field(default_factory=lambda: [6,3])
 
-    use_adapose: bool = True
+    centroid_alignment: bool = True
     # angular loss weight for avoiding attention map overlap
     angle_loss_weight: float = 0.0
     # Scale factor for updating the denoised latent z_t
@@ -224,7 +224,7 @@ class NLPConfig:
     # maximum attention refinement steps
     max_refinement_steps: List[int] = field(default_factory=lambda: [6,3])
 
-    use_adapose: bool = True
+    centroid_alignment: bool = True
     # angular loss weight for avoiding attention map overlap
     angle_loss_weight: float = 0.0
     # Scale factor for updating the denoised latent z_t
