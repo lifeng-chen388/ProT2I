@@ -306,7 +306,7 @@ with gr.Blocks() as iface:
         ],
         [
             "a man wearing a red hat and blue tracksuit is standing in front of a green sports car\na man wearing a hat and tracksuit is standing in front of a sports car\na man wearing a red hat and tracksuit is standing in front of a sports car\na man wearing a hat and blue tracksuit is standing in front of a sports car\na man wearing a hat and tracksuit is standing in front of a green sports car",
-            "\nrobot\ntree",
+            "\nhat\ntracksuit\ncar",
             0.25,
             20,
             6
