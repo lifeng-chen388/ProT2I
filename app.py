@@ -35,21 +35,8 @@ def get_diff_string(str1, str2):
 
 def init_pipeline():
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    
-    if device.type == "cuda":
-        pipe = ProT2IPipeline.from_pretrained(
-            "SG161222/RealVisXL_V4.0",
-            torch_dtype=torch.float16, 
-            use_safetensors=True,
-            variant='fp16'
-        ).to(device)
-        pipe.enable_model_cpu_offload()
-    else:
-        pipe = ProT2IPipeline.from_pretrained(
-            "SG161222/RealVisXL_V4.0",
-            torch_dtype=torch.float32, 
-            use_safetensors=False
-        ).to(device)
+    pipe = ProT2IPipeline.from_pretrained(config.model_path, use_safetensors=True, variant='fp16').to(torch.float16)
+    pipe.enable_model_cpu_offload()
     return pipe, device
 
 def process_image(
