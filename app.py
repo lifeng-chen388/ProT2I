@@ -35,7 +35,7 @@ def get_diff_string(str1, str2):
 
 def init_pipeline():
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    pipe = ProT2IPipeline.from_pretrained(config.model_path, use_safetensors=True, variant='fp16').to(torch.float16)
+    pipe = ProT2IPipeline.from_pretrained("SG161222/RealVisXL_V4.0", use_safetensors=True, variant='fp16').to(torch.float16)
     pipe.enable_model_cpu_offload()
     return pipe, device
 
@@ -208,7 +208,7 @@ with gr.Blocks() as iface:
                 
                 centroid_alignment = gr.Checkbox(
                     label="Use centroid alignment",
-                    value=True
+                    value=False
                 )
             
             with gr.Row():
