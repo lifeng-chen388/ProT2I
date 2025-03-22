@@ -10,3 +10,4 @@ pillow
 spacy
 stanza
 transformers
+matplotlib
