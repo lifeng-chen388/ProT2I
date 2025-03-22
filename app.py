@@ -80,8 +80,7 @@ def process_image(
         angle_loss_weight = 0.0
         max_refinement_steps = [6, 3]
         nursing_thresholds = {
-            0: 26, 1: 25, 2: 24, 3: 23, 4: 22.5,
-            5: 22, 6: 21.5, 7: 21, 8: 21, 9: 21
+            0: 26, 1: 25, 2: 24, 3: 23, 4: 22.5, 5: 22,
         }
         save_cross_attention_maps = False
         
@@ -271,25 +270,25 @@ with gr.Blocks() as iface:
     # Examples
     example_data = [
         [
-            "a car and a bench\na blue car and a bench\na car and a red bench",
+            "a car and a bench\na blue car and a bench\na car and a green bench",
             "car\nbench",
             0.1,
             20,
-            0
+            1
         ],
         [
             "In a cyberpunk style city night, a hound dog is standing in front of a sports car\nVan Gogh style hound dog\nLego-style sports car",
             "dog\ncar",
             0.25,
             20,
-            -1
+            2
         ],
         [
             "A sketch-style robot is leaning a oil-painting style tree\nA robot is leaning a tree\nA sketch-style robot is leaning a tree\nA robot is leaning a oil-painting style tree",
             "\nrobot\ntree",
             0.25,
             20,
-            -1
+            0
         ],
         [
             "a man wearing a red hat and blue tracksuit is standing in front of a green sports car\na man wearing a hat and tracksuit is standing in front of a sports car\na man wearing a red hat and tracksuit is standing in front of a sports car\na man wearing a hat and blue tracksuit is standing in front of a sports car\na man wearing a hat and tracksuit is standing in front of a green sports car",
@@ -313,4 +312,4 @@ with gr.Blocks() as iface:
     )
 
 if __name__ == "__main__":
-    iface.launch(share=True, server_port=8080)
+    iface.launch(share=True, server_port=7549)

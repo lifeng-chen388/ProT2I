@@ -10,6 +10,7 @@ from config import *
 
 
 if __name__ == "__main__":
+    # Choose config here
     config = StyleConfig()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     pipe = ProT2IPipeline.from_pretrained(config.model_path, use_safetensors=True, variant='fp16').to(torch.float16)
@@ -18,7 +19,7 @@ if __name__ == "__main__":
     seeds = config.seeds
 
     for seed in seeds:
-        if seed == 0:
+        if seed == -1:
             seed = random.randint(0,1000000) 
         g_cpu = torch.Generator().manual_seed(seed)
         if config.use_nlp:

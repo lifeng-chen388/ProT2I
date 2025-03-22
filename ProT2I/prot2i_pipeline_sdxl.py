@@ -149,6 +149,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
 
             brightest_patches = []
             max_vals = []
+            alignment_loss = 0.0
 
             for i in range(n_positions):
                 sub_map = vis_map[i]
@@ -169,7 +170,9 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
             pair_pos = (get_centroid(curr_map) * attention_res[0]).to(vis_map.device)
 
             for i, pos in enumerate(brightest_patches):
-                loss += (0.1 * (pair_pos[i] - pos) ** 2).mean()
+                alignment_loss += (0.05 * (pair_pos[i] - pos) ** 2).mean()
+                
+            loss += alignment_loss/len(brightest_patches)
 
             # ============  4 Add angular similarity constraints to prevent overlap (worked not remarkbly)============ 
             # for i in range(n_positions):
@@ -255,7 +258,7 @@ class ProT2IPipeline(StableDiffusionXLPipeline):
                     break
                 if iteration >= max_refinement_steps:
                     print(
-                        f"Entropy loss optimization Exceeded max number of iterations ({max_refinement_steps}) "
+                        f"Loss optimization Exceeded max number of iterations ({max_refinement_steps}) "
                     )
                     break
         # print Step iteration and loss

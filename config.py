@@ -37,8 +37,8 @@ class StyleConfig:
     # This would add one more branch, means more memory cost.
     use_remove_then_add:bool = False
 
-    # 0 represents random
-    seeds: List[int] = field(default_factory=lambda:[0]*10)
+    # -1 represents random
+    seeds: List[int] = field(default_factory=lambda: [2,7])
     # Path to save all outputs to
     output_path:str = "runs-SDXL/style-test"
     # Number of denoising steps
@@ -56,7 +56,7 @@ class StyleConfig:
     lb_t: float = 0.25
 
     # attention nursing work only when use_nurse=True
-    use_nurse:bool = True
+    use_nurse:bool = False
     # Dictionary defining the iterations and desired thresholds to apply iterative latent refinement in
     nursing_thresholds: Dict[int, float] = field(
         default_factory=lambda: {
@@ -79,7 +79,7 @@ class StyleConfig:
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
     scale_range: tuple = field(default_factory=lambda: (1.0, 0.0))
     # Whether to save cross attention maps for the final results
-    save_cross_attention_maps: bool = True
+    save_cross_attention_maps: bool = False
 
 
 @dataclass
@@ -160,7 +160,7 @@ class ColorConfig:
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
     scale_range: tuple = field(default_factory=lambda: (1.0, 0.0))
     # Whether to save cross attention maps for the final results
-    save_cross_attention_maps: bool = True
+    save_cross_attention_maps: bool = False
 
 
 
@@ -191,8 +191,8 @@ class NLPConfig:
     # This would add one more branch, means more memory cost.
     use_remove_then_add:bool = True
 
-    # 0 represents random
-    seeds: List[int] = field(default_factory=lambda: range(0,10))
+    # -1 represents random
+    seeds: List[int] = field(default_factory=lambda: [-1])
     # Path to save all outputs to
     output_path:str = "runs-SDXL/nlp"
     # Number of denoising steps
@@ -224,7 +224,7 @@ class NLPConfig:
     # maximum attention refinement steps
     max_refinement_steps: List[int] = field(default_factory=lambda: [6,3])
 
-    centroid_alignment: bool = False
+    centroid_alignment: bool = True
     # angular loss weight for avoiding attention map overlap
     angle_loss_weight: float = 0.0
     # Scale factor for updating the denoised latent z_t
@@ -232,6 +232,6 @@ class NLPConfig:
     # Start and end values used for scaling the scale factor - decays linearly with the denoising timestep
     scale_range: tuple = field(default_factory=lambda: (1.0, 0.0))
     # Whether to save cross attention maps for the final results
-    save_cross_attention_maps: bool = True
+    save_cross_attention_maps: bool = False
 
 
