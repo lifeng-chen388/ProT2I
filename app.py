@@ -102,7 +102,7 @@ def process_image(
                 "local_blend_words": nps[i],
                 "n_cross_replace": {"default_": n_cross},
                 "n_self_replace": float(n_self_replace),
-                "lb_threshold": float(lb_threshold)+1,
+                "lb_threshold": float(lb_threshold),
                 "lb_prompt": [sps[0]]*2,
                 "is_nursing": use_nurse,
                 "lb_res": (int(attention_res), int(attention_res)),

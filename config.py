@@ -53,7 +53,7 @@ class StyleConfig:
     # Higher n_self means more consistent image layout, but lower fielity.
     n_self: float = 0.8
     # threshold for instance-wise semantic masking, from -1.0 to 1.0
-    lb_t: float = 0.25
+    lb_t: float = 0.5
 
     # attention nursing work only when use_nurse=True
     use_nurse:bool = False
@@ -134,7 +134,7 @@ class ColorConfig:
     # Higher n_self means more consistent image layout, but lower fielity.
     n_self: float = 0.8
     # threshold for instance-wise semantic masking, from -1.0 to 1.0
-    lb_t: float = 0.25
+    lb_t: float = 0.5
 
     # attention nursing work only when use_nurse=True
     use_nurse:bool = True
@@ -206,7 +206,7 @@ class NLPConfig:
     # percentage of inference steps with self attention map swap, from 0.0 to 1.0
     n_self: float = 0.8
     # threshold for instance-wise semantic masking, from 0 to 1.0
-    lb_t: float = 0.25
+    lb_t: float = 0.5
 
     # attention nursing work only when use_nurse=True
     use_nurse:bool = True

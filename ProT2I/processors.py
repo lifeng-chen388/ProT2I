@@ -272,7 +272,7 @@ class LocalBlend:
         mask = F.interpolate(cross_map, size=(x_t.shape[2], x_t.shape[3]), mode='bilinear')  # (1,1,h,w)
         mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8) 
         mean_mask = mask.mean()
-        mask = mask.gt(mean_mask * self.threshold).float()
+        mask = mask.gt(mask.min() + (mask.max()-mask.min())* self.threshold).float()
 
         if self.save_map:
             vis_utils.save_binary_masks(

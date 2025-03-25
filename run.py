@@ -50,7 +50,7 @@ if __name__ == "__main__":
                 "local_blend_words": nps[i],
                 "n_cross_replace": {"default_": config.n_cross},
                 "n_self_replace": config.n_self,
-                "lb_threshold": config.lb_t+1,
+                "lb_threshold": config.lb_t,
                 "lb_prompt": [sps[0]]*2,
                 "is_nursing": config.use_nurse,
                 "lb_res": config.attention_res,
